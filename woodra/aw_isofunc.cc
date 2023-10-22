@@ -15,11 +15,11 @@
 
 class AWFunc : public ma::IsotropicFunction {
 public:
-	AWFunc(ma::Mesh* m): mesh(m) {
+	AWFunc(ma::Mesh* mesh): m(mesh) {
 		h_0 = ma::getAverageEdgeLength(m);
 		double x_min = INFINITY, x_max = -INFINITY;
-		ma::Iterator it = m->begin(0);
-		ma::Entity e;
+		ma::Iterator* it = m->begin(0);
+		ma::Entity* e;
 		while (e = m->iterate(it)) {
 			ma::Vector v = ma::getPosition(m, e);
 			if (v.x() < x_min) x_min = v.x();
@@ -29,7 +29,7 @@ public:
 		x_mid = (x_max + x_min) / 2;
 	}
 	virtual double getValue(ma::Entity* v) {
-		ma::Vector p = ma::getPosition(mesh, v);
+		ma::Vector p = ma::getPosition(m, v);
 		double x = p.x();
 		double a = 3;
 		double h_min = h_0/4.0, h_max = h_0 * 2;
@@ -59,7 +59,7 @@ int main (int argc, char ** argv) {
   m->verify();
 	apf::writeVtkFiles("before", m);
 	AWFunc aw(m);
-	ma::Input* in = ma::configure(m, aw);
+	ma::Input* in = ma::configure(m, &aw);
 	ma::adapt(in);
 	m->verify();
 	apf::writeVtkFiles("after", m);
