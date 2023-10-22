@@ -57,12 +57,26 @@ int main (int argc, char ** argv) {
 	gmi_register_mesh();
 	ma::Mesh* m = apf::loadMdsMesh(modelFile,meshFile);
   m->verify();
-	apf::writeVtkFiles("before", m);
 	AWFunc aw(m);
+	apf::Field *f = apf::createFieldOn(m, "isofield", apf::SCALAR);
+	ma::Iterator *it = m->begin(0);
+	for (ma::Entity *e = m->iterate(it); e != 0; e = m->iterate(it)) {
+		apf::setScalar(f, e, 0, aw.getValue(e));
+	}
+	m->end(it);
+	apf::writeVtkFiles("before", m);
+	apf::destroyField(f);
 	ma::Input* in = ma::configure(m, &aw);
 	ma::adapt(in);
 	m->verify();
+	f = apf::createFieldOn(m, "isofield", apf::SCALAR);
+	it = m->begin(0);
+	for (ma::Entity *e = m->iterate(it); e != 0; e = m->iterate(it)) {
+		apf::setScalar(f, e, 0, aw.getValue(e));
+	}
+	m->end(it);
 	apf::writeVtkFiles("after", m);
+	apf::destroyField(f);
 	m->destroyNative();
 	apf::destroyMesh(m);
 #ifdef HAVE_SIMMETRIX
