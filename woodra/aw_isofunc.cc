@@ -16,7 +16,23 @@
 class AWFunc : public ma::IsotropicFunction {
 public:
 	AWFunc(ma::Mesh* mesh): m(mesh) {
+		rescan();
+	}
+	virtual double getValue(ma::Entity* v) {
+		ma::Vector p = ma::getPosition(m, v);
+		return eval(p);
+	}
+
+	void rescan() {
+		scan_h0();
+		scan_xmid();
+	}
+
+	void scan_h0() {
 		h_0 = ma::getAverageEdgeLength(m);
+	}
+
+	void scan_xmid() {
 		double x_min = INFINITY, x_max = -INFINITY;
 		ma::Iterator* it = m->begin(0);
 		ma::Entity* e;
@@ -28,13 +44,14 @@ public:
 		m->end(it);
 		x_mid = (x_max + x_min) / 2;
 	}
-	virtual double getValue(ma::Entity* v) {
-		ma::Vector p = ma::getPosition(m, v);
+
+	double eval(const ma::Vector& p) const {
 		double x = p.x();
-		double a = 3;
+		double a = 0.1542;
 		double h_min = h_0/4.0, h_max = h_0 * 2;
 		return h_max + (h_min - h_max)*std::exp(-a*std::fabs(x - x_mid)/h_0);
 	}
+
 	ma::Mesh* m;
 	double h_0;
 	double x_mid;
@@ -57,6 +74,9 @@ int main (int argc, char ** argv) {
 	gmi_register_mesh();
 	ma::Mesh* m = apf::loadMdsMesh(modelFile,meshFile);
   m->verify();
+	apf::writeVtkFiles("before", m);
+	ma::Input* in = ma::configureUniformRefine(m, 1);
+	ma::adapt(in);
 	AWFunc aw(m);
 	apf::Field *f = apf::createFieldOn(m, "isofield", apf::SCALAR);
 	ma::Iterator *it = m->begin(0);
@@ -64,9 +84,9 @@ int main (int argc, char ** argv) {
 		apf::setScalar(f, e, 0, aw.getValue(e));
 	}
 	m->end(it);
-	apf::writeVtkFiles("before", m);
+	apf::writeVtkFiles("uniform", m);
 	apf::destroyField(f);
-	ma::Input* in = ma::configure(m, &aw);
+	in = ma::configure(m, &aw);
 	ma::adapt(in);
 	m->verify();
 	f = apf::createFieldOn(m, "isofield", apf::SCALAR);
