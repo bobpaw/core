@@ -41,7 +41,7 @@ int main(int argc, char** argv)
   }
   m->end(it);
   apf::writeVtkFiles("before",m);
-  ma::Input* in = ma::configure(m, f);
+  ma::Input* in = ma::makeAdvanced(ma::configure(m, f));
   in->shouldRunPreZoltan = true;
   in->shouldRunMidParma = true;
   in->shouldRunPostParma = true;

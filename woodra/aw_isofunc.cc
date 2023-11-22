@@ -75,7 +75,7 @@ int main (int argc, char ** argv) {
 	ma::Mesh* m = apf::loadMdsMesh(modelFile,meshFile);
   m->verify();
 	apf::writeVtkFiles("before", m);
-	ma::Input* in = ma::configureUniformRefine(m, 1);
+	const ma::Input* in = ma::configureUniformRefine(m, 1);
 	ma::adapt(in);
 	AWFunc aw(m);
 	apf::Field *f = apf::createFieldOn(m, "isofield", apf::SCALAR);

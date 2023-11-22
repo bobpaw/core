@@ -122,7 +122,7 @@ int main (int argc, char ** argv) {
 	m->end(it);
 	apf::writeVtkFiles("before", m);
 	apf::destroyField(f);
-	ma::Input* in = ma::configure(m, &aw);
+	const ma::Input* in = ma::configure(m, &aw);
 	ma::adapt(in);
 	m->verify();
 	f = apf::createFieldOn(m, "isofield", apf::SCALAR);
