@@ -16,7 +16,7 @@
 
 class ExpLengthFunc : public ma::IsotropicFunction {
   enum class Axis { X, Y, Z } axis;
-  double midpoint, avg_edge_len;
+  double midpoint, h0; // h0 = length/20
   ma::Mesh *m;
 
   double ldist (const ma::Vector &v) const {
@@ -52,18 +52,22 @@ class ExpLengthFunc : public ma::IsotropicFunction {
       // X is the longest axis.
       axis = Axis::X;
       midpoint = (mins.x() + maxs.x()) / 2.0;
+      h0 = length.x() / 20;
+      std::cout << "Adapting along x-axis." << std::endl;
     } else if (length.y() >= length.x() && length.y() >= length.z()) {
       // Y is the longest axis.
       axis = Axis::Y;
       midpoint = (mins.y() + maxs.x()) / 2.0;
+      h0 = length.y() / 20;
+      std::cout << "Adapting along y-axis." << std::endl;
     } else {
       // Z is the longest axis.
       PCU_DEBUG_ASSERT(length.z() >= length.x() && length.z() >= length.y());
       axis = Axis::Z;
       midpoint = (mins.z() + maxs.z()) / 2.0;
+      h0 = length.z() / 20;
+      std::cout << "Adapting along z-axis." << std::endl;
     }
-
-    avg_edge_len = ma::getAverageEdgeLength(m);
   }
 
   ~ExpLengthFunc () {}
@@ -71,9 +75,9 @@ class ExpLengthFunc : public ma::IsotropicFunction {
   double getValue(ma::Entity *vert) {
     ma::Vector v = ma::getPosition(m, vert);
     double dist = ldist(v);
-    double h_min = avg_edge_len / 4.0, h_max = avg_edge_len * 2.0;
-    double a = 0.1542;
-    return h_max + (h_max - h_min) * std::exp(-a*ldist(v)/avg_edge_len);
+    double h_min = h0 / 4.0, h_max = h0 * 2.0;
+    double a = 0.1524;
+    return h_max + (h_min - h_max) * std::exp(-a*ldist(v)/h0);
   }
 };
 
