@@ -14,70 +14,18 @@
 // Mesh adapt
 #include <ma.h>
 
-class ExpLengthFunc : public ma::IsotropicFunction {
-  enum class Axis { X, Y, Z } axis;
-  double midpoint, h0; // h0 = length/20
-  ma::Mesh *m;
+#include "aw_explf.h"
 
-  double ldist (const ma::Vector &v) const {
-    switch (axis) {
-      case Axis::X:
-        return std::fabs(v.x() - midpoint);
-      case Axis::Y:
-        return std::fabs(v.y() - midpoint);
-      case Axis::Z:
-        return std::fabs(v.z() - midpoint);
-    }
-  }
+class IsoExpLengthFunc : public ma::IsotropicFunction, public ExpLengthFunc {
 
   public:
-  ExpLengthFunc(ma::Mesh *mesh) : m(mesh) {
-    // Find mesh bounds.
-    ma::Vector mins(HUGE_VAL, HUGE_VAL, HUGE_VAL), maxs(-HUGE_VAL, -HUGE_VAL, -HUGE_VAL);
-    ma::Iterator *it = m->begin(0);
-    while (ma::Entity *ent = m->iterate(it)) {
-      ma::Vector v = ma::getPosition(m, ent);
+  IsoExpLengthFunc (ma::Mesh *mesh) : ExpLengthFunc(mesh) {}
 
-      if (v.x() < mins.x()) mins.x() = v.x();
-      if (v.x() > maxs.x()) maxs.x() = v.x();
-      if (v.y() < mins.y()) mins.y() = v.y();
-      if (v.y() > maxs.y()) maxs.y() = v.y();
-      if (v.z() < mins.z()) mins.z() = v.z();
-      if (v.z() > maxs.z()) maxs.z() = v.z();
-    }
-    m->end(it);
-
-    ma::Vector length = maxs - mins;
-    if (length.x() >= length.y() && length.x() >= length.z()) {
-      // X is the longest axis.
-      axis = Axis::X;
-      midpoint = (mins.x() + maxs.x()) / 2.0;
-      h0 = length.x() / 20;
-      std::cout << "Adapting along x-axis." << std::endl;
-    } else if (length.y() >= length.x() && length.y() >= length.z()) {
-      // Y is the longest axis.
-      axis = Axis::Y;
-      midpoint = (mins.y() + maxs.x()) / 2.0;
-      h0 = length.y() / 20;
-      std::cout << "Adapting along y-axis." << std::endl;
-    } else {
-      // Z is the longest axis.
-      PCU_DEBUG_ASSERT(length.z() >= length.x() && length.z() >= length.y());
-      axis = Axis::Z;
-      midpoint = (mins.z() + maxs.z()) / 2.0;
-      h0 = length.z() / 20;
-      std::cout << "Adapting along z-axis." << std::endl;
-    }
-  }
-
-  ~ExpLengthFunc () {}
+  ~IsoExpLengthFunc () {}
 
   double getValue(ma::Entity *vert) {
     ma::Vector v = ma::getPosition(m, vert);
-    double dist = ldist(v);
-    double h_min = h0 / 4.0, h_max = h0 * 2.0;
-    double a = 0.1524, b = 2;
-    return h_max + (h_min - h_max) * std::exp(-a*std::pow(ldist(v), 2)/h0);
+    return eval(v);
   }
 };
 
@@ -103,9 +51,9 @@ int main (int argc, char *argv[]) {
 
   // Adapt mesh
   std::cout << "Creating size function." << std::endl;
-  ExpLengthFunc elf(m);
+  IsoExpLengthFunc ielf(m);
   std::cout << "Adapting mesh." << std::endl;
-  ma::adapt(m, &elf);
+  ma::adapt(m, &ielf);
   m->verify();
   
   // Write mesh

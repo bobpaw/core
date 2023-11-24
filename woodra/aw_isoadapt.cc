@@ -34,7 +34,7 @@ int main (int argc, char* argv[]) {
   ma::Mesh *m = apf::loadMdsMesh(inmodel, inmesh);
   m->verify();
 
-  double l = ma::getAverageEdgeLength(m);
+  double L = ma::getMaximumEdgeLength(m);
 
   class IF : public ma::IsotropicFunction {
     double val_;
@@ -44,7 +44,7 @@ int main (int argc, char* argv[]) {
         return val_;
       }
       virtual ~IF() {}
-  } func(l);
+  } func(L/20);
 
   std::cout << "Adapting mesh." << std::endl;
   ma::adapt(m, &func);
