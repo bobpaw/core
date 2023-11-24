@@ -14,7 +14,7 @@
 // Mesh adapt
 #include <ma.h>
 
-class ExpLengthFunc : public ma::IsotropicFunction {
+class ExpLengthFunc : public ma::AnisotropicFunction {
   enum class Axis { X, Y, Z } axis;
   double midpoint, h0; // h0 = length/20
   ma::Mesh *m;
@@ -72,12 +72,27 @@ class ExpLengthFunc : public ma::IsotropicFunction {
 
   ~ExpLengthFunc () {}
 
-  double getValue(ma::Entity *vert) {
+  void getValue(ma::Entity *vert, ma::Matrix &r, ma::Vector &h) {
     ma::Vector v = ma::getPosition(m, vert);
     double dist = ldist(v);
     double h_min = h0 / 4.0, h_max = h0 * 2.0;
     double a = 0.1524, b = 2;
-    return h_max + (h_min - h_max) * std::exp(-a*std::pow(ldist(v), 2)/h0);
+    h = ma::Vector(h_max, h_max, h_max);
+    double h_ = h_max + (h_min - h_max) * std::exp(-a*std::pow(ldist(v), b)/h0);
+    switch (axis) {
+      case Axis::X:
+        h.x() = h_;
+        break;
+      case Axis::Y:
+        h.y() = h_;
+        break;
+      case Axis::Z:
+        h.z() = h_;
+        break;
+    }
+    r = ma::Matrix(1, 0, 0,
+                   0, 1, 0,
+                   0, 0, 1);
   }
 };
 
