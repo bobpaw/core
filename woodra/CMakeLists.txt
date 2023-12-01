@@ -22,3 +22,5 @@ util_exe_func(aw_isoadapt aw_isoadapt.cc)
 util_exe_func(mds2vtk mds2vtk.cc)
 util_exe_func(aw_expadapt aw_expadapt.cc aw_explf.cc)
 util_exe_func(aniso_expadapt aniso_expadapt.cc aw_explf.cc)
+util_exe_func(adaptSolution adaptSolution.cc aw_explf.cc)
+
