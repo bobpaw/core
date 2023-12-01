@@ -27,20 +27,22 @@ ExpLengthFunc::ExpLengthFunc(ma::Mesh *mesh) : m(mesh) {
     // X is the longest axis.
     axis = Axis::X;
     midpoint = (mins.x() + maxs.x()) / 2.0;
+    h0 = length.x() / 20.0;
     std::cout << "Adapting along x-axis." << std::endl;
   } else if (length.y() >= length.x() && length.y() >= length.z()) {
     // Y is the longest axis.
     axis = Axis::Y;
     midpoint = (mins.y() + maxs.x()) / 2.0;
+    h0 = length.y() / 20.0;
     std::cout << "Adapting along y-axis." << std::endl;
   } else {
     // Z is the longest axis.
     PCU_DEBUG_ASSERT(length.z() >= length.x() && length.z() >= length.y());
     axis = Axis::Z;
     midpoint = (mins.z() + maxs.z()) / 2.0;
+    h0 = length.z() / 20.0;
     std::cout << "Adapting along z-axis." << std::endl;
   }
-  h0 = ma::getMaximumEdgeLength(m) / 20;
 }
 
 double ExpLengthFunc::ldist (const ma::Vector &v) const {

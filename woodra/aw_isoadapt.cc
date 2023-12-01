@@ -34,12 +34,41 @@ int main (int argc, char* argv[]) {
   ma::Mesh *m = apf::loadMdsMesh(inmodel, inmesh);
   m->verify();
 
-  double L = ma::getMaximumEdgeLength(m);
+  ma::Vector mins(HUGE_VAL, HUGE_VAL, HUGE_VAL), maxs(-HUGE_VAL, -HUGE_VAL, -HUGE_VAL);
+  ma::Iterator *it = m->begin(0);
+  while (ma::Entity *ent = m->iterate(it)) {
+    ma::Vector v = ma::getPosition(m, ent);
+
+    if (v.x() < mins.x()) mins.x() = v.x();
+    if (v.x() > maxs.x()) maxs.x() = v.x();
+    if (v.y() < mins.y()) mins.y() = v.y();
+    if (v.y() > maxs.y()) maxs.y() = v.y();
+    if (v.z() < mins.z()) mins.z() = v.z();
+    if (v.z() > maxs.z()) maxs.z() = v.z();
+  }
+  m->end(it);
+
+  double L;
+  ma::Vector length = maxs - mins;
+  if (length.x() >= length.y() && length.x() >= length.z()) {
+    // X is the longest axis.
+    L = length.x();
+  } else if (length.y() >= length.x() && length.y() >= length.z()) {
+    // Y is the longest axis.
+    L = length.y();
+  } else {
+    // Z is the longest axis.
+    PCU_DEBUG_ASSERT(length.z() >= length.x() && length.z() >= length.y());
+    L = length.z();
+  }
+  std::cout << "Adapting with L = " << L << std::endl;
 
   class IF : public ma::IsotropicFunction {
     double val_;
     public:
-      IF (double v) : val_(v) {}
+      IF (double v) : val_(v) {
+        std::cout << "Creating IsoFunc with v = " << v << std::endl;
+      }
       virtual double getValue(ma::Entity*) {
         return val_;
       }
