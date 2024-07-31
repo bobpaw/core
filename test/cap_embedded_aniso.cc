@@ -1,5 +1,8 @@
 #include <unistd.h>
 #include <cstdlib>
+
+#include <queue>
+
 #include <PCU.h>
 #include <lionPrint.h>
 #include <gmi.h>
@@ -65,6 +68,9 @@ namespace {
     M_GTopo shock_surface;
     double thickness_tol, norm_size, init_size, tan_size;
   }; // class EmbeddedSizeFunction
+
+  apf::Field* make_adapt_sizes(ma::Mesh* m, apf::ModelEntity* shock,
+    double grade = 1.5);
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -146,11 +152,12 @@ int main(int argc, char* argv[]) {
   std::cout << "INFO: Tangent size: " << args.aniso_size() * args.ratio() << std::endl;
 
   std::cout << ++stage << ". Make sizefield." << std::endl;
-  ma::AnisotropicFunction* sf = new EmbeddedShockFunction(adaptMesh,
-    shock_surface, args.aniso_size(), args.ratio(), h0, args.thickness());
-  apf::Field *frameField = nullptr, *scaleField = nullptr;
+  apf::Field* adapt_sizes = make_adapt_sizes(adaptMesh, (apf::ModelEntity*) toGmiEntity(shock_surface));
+  /* ma::AnisotropicFunction* sf = new EmbeddedShockFunction(adaptMesh,
+    shock_surface, args.aniso_size(), args.ratio(), h0, args.thickness()); */
+  // apf::Field *frameField = nullptr, *scaleField = nullptr;
   if (!args.before().empty() || !args.analytic()) {
-    frameField = apf::createFieldOn(adaptMesh, "adapt_frames", apf::MATRIX);
+    /*frameField = apf::createFieldOn(adaptMesh, "adapt_frames", apf::MATRIX);
     scaleField = apf::createFieldOn(adaptMesh, "adapt_scales", apf::VECTOR);
     ma::Iterator* it = adaptMesh->begin(0);
     for (ma::Entity *v = adaptMesh->iterate(it); v;
@@ -161,7 +168,7 @@ int main(int argc, char* argv[]) {
       apf::setVector(scaleField, v, 0, scale);
       apf::setMatrix(frameField, v, 0, frame);
     }
-    adaptMesh->end(it);
+    adaptMesh->end(it); */
     if (!args.before().empty()) {
       std::cout << ++stage << ". Write before VTK." << std::endl;
       apf::writeVtkFiles(args.before().c_str(), adaptMesh);
@@ -171,10 +178,14 @@ int main(int argc, char* argv[]) {
   std::cout << ++stage << ". Setup adaptation." << std::endl;
   ma::Input* in;
   if (args.analytic()) {
-    in = ma::makeAdvanced(ma::configure(adaptMesh, sf));
-  } else {
-    in = ma::makeAdvanced(ma::configure(adaptMesh, scaleField, frameField));
+    std::cout << "ERROR: Unsupported." << std::endl;
+    std::cout << "Sorry, analytic mode not supported with make_adapt_sizes.\n" << std::endl;
+    // in = ma::makeAdvanced(ma::configure(adaptMesh, sf));
   }
+
+  for (int i = 0; i < 2; ++i) {
+    // in = ma::makeAdvanced(ma::configure(adaptMesh, scaleField, frameField));
+    in = ma::makeAdvanced(ma::configure(adaptMesh, adapt_sizes));
   if (args.maxiter() >= 0) in->maximumIterations = args.maxiter();
 
   std::cout << ++stage << ". Run adapt." << std::endl;
@@ -182,6 +193,11 @@ int main(int argc, char* argv[]) {
     ma::adaptVerbose(in, args.verbosity() > 2);
   } else {
     ma::adapt(in);
+  }
+  if (i + 1 < 2) {
+  apf::destroyField(adapt_sizes);
+  adapt_sizes = make_adapt_sizes(adaptMesh, (apf::ModelEntity*) toGmiEntity(shock_surface));
+  }
   }
 
   if (!args.after().empty()) {
@@ -430,5 +446,75 @@ namespace {
       frame[2][0] = 0; frame[2][1] = 0; frame[2][2] = 1;
       scale[0] = scale[1] = scale[2] = init_size;
     }
+  }
+
+  apf::Field* make_adapt_sizes(ma::Mesh* m, apf::ModelEntity* shock,
+    double grade) {
+    double norm_size = 0.0;
+    int edge_count = 0;
+
+    // Measure average length of mesh edges on shock.
+    apf::MeshTag* vert_marker = m->createIntTag("adapt_sizes_marker", 1);
+    apf::MeshIterator* it = m->begin(1);
+    for (apf::MeshEntity* e = m->iterate(it); e; e = m->iterate(it)) {
+      // Skip non-model edges.
+      if (m->toModel(e) != shock) continue;
+      // Skip visited verts.
+      apf::MeshEntity* verts[2];
+      m->getDownward(e, 0, verts);
+      if (m->hasTag(verts[0], vert_marker) || m->hasTag(verts[1], vert_marker))
+         continue;
+      // Mark verts.
+      int mark = 1;
+      m->setIntTag(verts[0], vert_marker, &mark);
+      m->setIntTag(verts[1], vert_marker, &mark);
+      // Count edge.
+      edge_count++;
+      apf::MeshElement* me = apf::createMeshElement(m, e);
+      norm_size += apf::measure(me);
+      apf::destroyMeshElement(me);
+    }
+    m->end(it);
+
+    norm_size /= edge_count * 4;
+    std::cout << "INFO: edge_count: " << edge_count << ", norm_size = " <<
+      norm_size << std::endl;
+
+    apf::Field* adapt_sizes = apf::createFieldOn(m, "adapt_sizes", apf::SCALAR);
+
+    // Set shock surface sizes.
+    // Breadth-first search to grade vertices.
+    std::queue<apf::MeshEntity*> layer, next_layer;
+    it = m->begin(0);
+    for (apf::MeshEntity* vtx = m->iterate(it); vtx; vtx = m->iterate(it)) {
+      if (m->hasTag(vtx, vert_marker)) {
+        next_layer.push(vtx);
+        m->removeTag(vtx, vert_marker);
+      }
+    }
+    m->end(it);
+
+    while (!next_layer.empty()) {
+      std::swap(layer, next_layer);
+      while (!layer.empty()) {
+        apf::MeshEntity* vtx = layer.front();
+        if (!m->hasTag(vtx, vert_marker)) {
+          apf::setScalar(adapt_sizes, vtx, 0, norm_size);
+          apf::Adjacent adj;
+          apf::getBridgeAdjacent(m, vtx, 1, 0, adj);
+          for (size_t i = 0; i < adj.size(); ++i) {
+            next_layer.push(adj[i]);
+          }
+          int mark = 1;
+          m->setIntTag(vtx, vert_marker, &mark);
+        }
+        layer.pop();
+      }
+      norm_size *= grade;
+    }
+    std::cout << "INFO: final norm_size = " << norm_size << std::endl;
+    apf::removeTagFromDimension(m, vert_marker, 0);
+    m->destroyTag(vert_marker);
+    return adapt_sizes;
   }
 } // namespace
