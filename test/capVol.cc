@@ -21,6 +21,9 @@
 // Mesh adapt
 #include <ma.h>
 
+// Partitioning
+#include <parma.h>
+
 using namespace CreateMG;
 using namespace CreateMG::Attribution;
 using namespace CreateMG::Mesh;
@@ -74,7 +77,7 @@ int main(int argc, char** argv) {
 
   // Parse arguments.
   bool volume_flag = false, write_flag = false, analytic_flag = false,
-       verbose_flag = false, mds_flag = false;
+       verbose_flag = false, mds_flag = false, parallel_flag = false;
   for (int i = 1; i < argc - 2; ++i) {
     if (*argv[i] == '-') {
       for (int j = 1; argv[i][j] != '\0'; ++j) {
@@ -84,6 +87,9 @@ int main(int argc, char** argv) {
           break;
         case 'g':
           volume_flag = true;
+          break;
+        case 'p':
+          parallel_flag = true;
           break;
         case 'v':
           verbose_flag = true;
@@ -102,6 +108,11 @@ int main(int argc, char** argv) {
         }
       }
     }
+  }
+
+  if (parallel_flag && !mds_flag) {
+    printf("INFO: -p implies -m. activating MDS adapt.\n");
+    mds_flag = true;
   }
 
   const char* createFileName = argv[argc - 1];
@@ -132,7 +143,7 @@ int main(int argc, char** argv) {
   M_GModel gmodel = cs.load_files(filenames);
 
   M_MModel mmodel;
-  if (volume_flag) {
+  if (volume_flag && PCU_Comm_Self() == 0) {
     mmodel = cs.generate_mesh();
     if (mmodel.is_invalid()) {
       lion_eprint(1, "FATAL: Failed to mesh the model.\n");
@@ -148,7 +159,7 @@ int main(int argc, char** argv) {
     MG_API_CALL(m, set_current_model(mmodel));
   }
 
-  if (write_flag) {
+  if (write_flag && PCU_Comm_Self() == 0) {
     cs.save_file("core_capVol_before.cre", gmodel);
   }
 
@@ -164,16 +175,40 @@ int main(int argc, char** argv) {
 
   ma::Mesh* adaptMesh = apfCapMesh;
   if (mds_flag) {
-    adaptMesh = apf::createMdsMesh(apfCapMesh->getModel(), apfCapMesh);
-    apf::reorderMdsMesh(adaptMesh);
-    // APF default routine will typically fail to verify surface meshes.
-    if (volume_flag) adaptMesh->verify();
-    if (write_flag) {
-      apf::writeVtkFiles("core_capVol_mds.vtk", adaptMesh);
+    if (PCU_Comm_Self() == 0) {
+      adaptMesh = apf::createMdsMesh(apfCapMesh->getModel(), apfCapMesh);
+      apf::reorderMdsMesh(adaptMesh);
+      // APF default routine will typically fail to verify surface meshes.
+      if (volume_flag) adaptMesh->verify();
+      if (write_flag) {
+        apf::writeVtkFiles("core_capVol_mds.vtk", adaptMesh);
+      }
+    } else {
+      adaptMesh = apf::makeEmptyMdsMesh(apfCapMesh->getModel(),
+        apfCapMesh->getDimension(), apfCapMesh->hasMatching());
     }
     apfCapMesh->setModel(nullptr); // Disown the model.
     delete apfCapMesh;
     apfCapMesh = nullptr;
+  }
+
+  if (parallel_flag) {
+    PCU_Barrier();
+    apf::Migration* plan = nullptr;
+    if (PCU_Comm_Self() == 0)
+      std::cout << "STATUS: Partitioning the mesh." << std::endl;
+    apf::Splitter* splitter = Parma_MakeRibSplitter(adaptMesh);
+    apf::MeshTag* weights = Parma_WeighByMemory(adaptMesh);
+    // Split into 2 pieces with 10% imbalance.
+    plan = splitter->split(weights, 1.10, 2);
+    apf::removeTagFromDimension(adaptMesh, weights,
+      adaptMesh->getDimension());
+    adaptMesh->destroyTag(weights);
+    delete splitter;
+    adaptMesh = apf::expandMdsMesh(adaptMesh, adaptMesh->getModel(), 1);
+    adaptMesh->migrate(plan);
+    plan = nullptr;
+    apf::writeVtkFiles("core_capVol_mds_split.vtk", adaptMesh);
   }
 
   // Choose appropriate size-field.
@@ -237,6 +272,10 @@ int main(int argc, char** argv) {
 
   if (write_flag) {
     if (mds_flag) {
+      if (parallel_flag) {
+        apf::writeVtkFiles("core_capVol_after_par.vtk", adaptMesh);
+        // FIXME: join
+      }
       apf::writeVtkFiles("core_capVol_after_mds.vtk", adaptMesh);
       MG_API_CALL(m, create_associated_model(mmodel, gmodel, "MeshAdapt"));
       MG_API_CALL(m, set_adjacency_state(REGION2FACE|REGION2EDGE|REGION2VERTEX|
