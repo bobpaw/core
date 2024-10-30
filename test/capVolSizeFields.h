@@ -86,16 +86,13 @@ class Shock : public ma::AnisotropicFunction
      * @param hmin The minimum edge length.
      * @param h_0 The mesh size.
      */
-    Shock(ma::Mesh* m, double x_shock, double delta, double hmin, double h_0) :
-      mesh(m), x0(x_shock), d_inv(1/delta), h_min(hmin), h_0(h0)
+    Shock(ma::Mesh* m, double x_shock = 0.0, double delta = 0.5,
+      double hmin = 0.001, double h_0 = 0.25) :
+      mesh(m), x0(x_shock), d_inv(1/delta), h_min(hmin), h0(h_0)
     {
       assert(delta > 0);
     }
 
-    /**
-     * @brief Construct a new Shock with default parameters.
-     */
-    Shock(ma::Mesh* m) : Shock(m, 0.0, 0.5, 0.001, 0.25) {}
     virtual void getValue(ma::Entity* v, ma::Matrix& R, ma::Vector& H)
     {
       ma::Vector p = ma::getPosition(mesh,v);
