@@ -860,24 +860,18 @@ const char* MeshCAP::getTagName(MeshTag* tag)
 bool MeshCAP::isShared(MeshEntity* e)
 {
   (void)e;
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::isShared called in a parallel run!\n");
   return false;
 }
 
 bool MeshCAP::isOwned(MeshEntity* e)
 {
   (void)e;
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::isOwned called in a parallel run!\n");
   return true;
 }
 
 int MeshCAP::getOwner(MeshEntity* e)
 {
   (void)e;
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::getOwner called in a parallel run!\n");
   return 0;
 }
 
@@ -885,22 +879,16 @@ void MeshCAP::getRemotes(MeshEntity* e, Copies& remotes)
 {
   (void)e;
   (void)remotes;
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::getRemotes called in a parallel run!\n");
 }
 
 void MeshCAP::getResidence(MeshEntity* e, Parts& residence)
 {
   (void)e;
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::getResidence called in a parallel run!\n");
   residence.insert(0);
 }
 
 int MeshCAP::getId()
 {
-  if (PCU_Comm_Peers() != 1)
-    apf::fail("MeshCAP::getId called in a parallel run!\n");
   return PCU_Comm_Self();
 }
 

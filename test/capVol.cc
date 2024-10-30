@@ -48,6 +48,7 @@ void printUsage(char *argv0) {
   "-v\tEnable verbose output.\n"
   "-w\tWrite before.vtk, after.vtk, and after.cre.\n"
   "-m\tConvert mesh to MDS during adaptation.\n"
+  "-p\tEnable parallel adapt.\n"
   "SIZE-FIELDS:\n"
   "%d, for uniform anisotropic size-field\n"
   "%d, for wing-shock size-field\n"
@@ -175,40 +176,47 @@ int main(int argc, char** argv) {
 
   ma::Mesh* adaptMesh = apfCapMesh;
   if (mds_flag) {
-    if (PCU_Comm_Self() == 0) {
-      adaptMesh = apf::createMdsMesh(apfCapMesh->getModel(), apfCapMesh);
-      apf::reorderMdsMesh(adaptMesh);
-      // APF default routine will typically fail to verify surface meshes.
-      if (volume_flag) adaptMesh->verify();
-      if (write_flag) {
-        apf::writeVtkFiles("core_capVol_mds.vtk", adaptMesh);
-      }
-    } else {
-      adaptMesh = apf::makeEmptyMdsMesh(apfCapMesh->getModel(),
-        apfCapMesh->getDimension(), apfCapMesh->hasMatching());
+    int parts = PCU_Comm_Peers();
+    apf::Mesh2* serialMesh = nullptr;
+    apf::Migration* plan = nullptr;
+    bool original = PCU_Comm_Self() == 0;
+    MPI_Comm comm;
+    if (parallel_flag) {
+      MPI_Comm_split(MPI_COMM_WORLD, PCU_Comm_Self(), 0, &comm);
+      PCU_Switch_Comm(comm);
     }
+    if (original) {
+      serialMesh = apf::createMdsMesh(apfCapMesh->getModel(), apfCapMesh, true);
+      // APF default routine will typically fail to verify surface meshes.
+      if (volume_flag) serialMesh->verify();
+      if (write_flag) {
+        apf::writeVtkFiles("core_capVol_mds.vtk", serialMesh);
+      }
+      if (parallel_flag) {
+        std::cout << "STATUS: Partitioning the mesh." << std::endl;
+        apf::Splitter* splitter = Parma_MakeRibSplitter(serialMesh);
+        apf::MeshTag* weights = Parma_WeighByMemory(serialMesh);
+        // Split into 2 pieces with 10% imbalance.
+        plan = splitter->split(weights, 1.10, parts);
+        apf::removeTagFromDimension(serialMesh, weights,
+          serialMesh->getDimension());
+        serialMesh->destroyTag(weights);
+        delete splitter;
+      }
+    }
+    if (parallel_flag) {
+      PCU_Switch_Comm(MPI_COMM_WORLD);
+      MPI_Comm_free(&comm);
+      PCU_Barrier();
+      serialMesh = apf::repeatMdsMesh(serialMesh, apfCapMesh->getModel(), plan,
+        parts);
+      plan = nullptr;
+      apf::writeVtkFiles("core_capVol_mds_split.vtk", serialMesh);
+    }
+    adaptMesh = serialMesh;
     apfCapMesh->setModel(nullptr); // Disown the model.
     delete apfCapMesh;
     apfCapMesh = nullptr;
-  }
-
-  if (parallel_flag) {
-    PCU_Barrier();
-    apf::Migration* plan = nullptr;
-    if (PCU_Comm_Self() == 0)
-      std::cout << "STATUS: Partitioning the mesh." << std::endl;
-    apf::Splitter* splitter = Parma_MakeRibSplitter(adaptMesh);
-    apf::MeshTag* weights = Parma_WeighByMemory(adaptMesh);
-    // Split into 2 pieces with 10% imbalance.
-    plan = splitter->split(weights, 1.10, 2);
-    apf::removeTagFromDimension(adaptMesh, weights,
-      adaptMesh->getDimension());
-    adaptMesh->destroyTag(weights);
-    delete splitter;
-    adaptMesh = apf::expandMdsMesh(adaptMesh, adaptMesh->getModel(), 1);
-    adaptMesh->migrate(plan);
-    plan = nullptr;
-    apf::writeVtkFiles("core_capVol_mds_split.vtk", adaptMesh);
   }
 
   // Choose appropriate size-field.
@@ -263,6 +271,8 @@ int main(int argc, char** argv) {
     in = ma::makeAdvanced(ma::configure(adaptMesh, sf));
   }
 
+  if (mode == 3) in->shouldSnap = false;
+
   ma::adapt(in);
 
   if (volume_flag) {
@@ -274,26 +284,49 @@ int main(int argc, char** argv) {
     if (mds_flag) {
       if (parallel_flag) {
         apf::writeVtkFiles("core_capVol_after_par.vtk", adaptMesh);
-        // FIXME: join
+        apf::Migration* plan = new apf::Migration(adaptMesh);
+        apf::MeshIterator* it = adaptMesh->begin(adaptMesh->getDimension());
+        for (apf::MeshEntity* e = adaptMesh->iterate(it); e;
+          e = adaptMesh->iterate(it)) {
+          plan->send(e, 0);
+        }
+        adaptMesh->end(it);
+        adaptMesh->migrate(plan); // destroys plan and tag
+        struct Map0 : apf::Remap {
+          virtual int operator()(int) { return 0; }
+        } map0;
+        apf::remapPartition(adaptMesh, map0);
       }
       apf::writeVtkFiles("core_capVol_after_mds.vtk", adaptMesh);
-      MG_API_CALL(m, create_associated_model(mmodel, gmodel, "MeshAdapt"));
-      MG_API_CALL(m, set_adjacency_state(REGION2FACE|REGION2EDGE|REGION2VERTEX|
-                 FACE2EDGE|FACE2VERTEX));
-      MG_API_CALL(m, set_reverse_states());
-      // MG_API_CALL(m, compute_adjacency()); // unnecessary because no elements?
-      ma::Mesh* newCapMesh = apf::createMesh(m, g);
-      apf::convert(adaptMesh, newCapMesh);
-      apf::writeVtkFiles("core_capVol_after_cap.vtk", newCapMesh);
-      apf::destroyMesh(newCapMesh);
+      MPI_Comm comm;
+      if (parallel_flag) {
+        MPI_Comm_split(MPI_COMM_WORLD, PCU_Comm_Self(), 0, &comm);
+        PCU_Switch_Comm(comm);
+      }
+      if (PCU_Comm_Self() == 0) {
+        MG_API_CALL(m, create_associated_model(mmodel, gmodel, "MeshAdapt"));
+        MG_API_CALL(m, set_adjacency_state(REGION2FACE|REGION2EDGE|REGION2VERTEX|
+                   FACE2EDGE|FACE2VERTEX));
+        MG_API_CALL(m, set_reverse_states());
+        // MG_API_CALL(m, compute_adjacency()); // unnecessary because no elements?
+        ma::Mesh* newCapMesh = apf::createMesh(m, g);
+        apf::convert(adaptMesh, newCapMesh);
+        apf::writeVtkFiles("core_capVol_after_cap.vtk", newCapMesh);
+        apf::destroyMesh(newCapMesh);
+      }
+      if (parallel_flag) {
+        PCU_Switch_Comm(MPI_COMM_WORLD);
+        MPI_Comm_free(&comm);
+        PCU_Barrier();
+      }
     } else {
       apf::writeVtkFiles("core_capVol_after_cap.vtk", adaptMesh);
     }
-    cs.save_file("core_capVol_after.cre", gmodel);
+    if (PCU_Comm_Self() == 0) cs.save_file("core_capVol_after.cre", gmodel);
   }
 
   /* PRINT ADAPTED MESH INFO */
-  if (verbose_flag) {
+  if (PCU_Comm_Self() == 0 && verbose_flag) {
     M_MModel mmdl;
     m->get_current_model(mmdl);
     std::string info;
