@@ -69,7 +69,8 @@ void printUsage(char *argv0) {
   "%d, for uniform anisotropic size-field\n"
   "%d, for wing-shock size-field\n"
   "%d, for cube-shock size-field\n"
-  "%d, for cylinder boundary-layer size-field\n", 1, 2, 3, 4);
+  "%d, for cylinder boundary-layer size-field\n"
+  "%d, for translated cube-shock size-field\n", 1, 2, 3, 4, 5);
 }
 
 } // namespace
@@ -190,6 +191,9 @@ int main(int argc, char** argv) {
     case 4:
       sf = new CylBoundaryLayer(apfCapMesh);
       break;
+    case 5:
+      sf = new Shock(apfCapMesh, 0.25);
+      break;
     default:
       lion_eprint(1, "FATAL: Invalid size-field.\n");
       myExit(EXIT_FAILURE);
@@ -227,22 +231,7 @@ int main(int argc, char** argv) {
     in = ma::makeAdvanced(ma::configure(apfCapMesh, sf));
   }
 
-  in->shouldSnap = true;
-  in->shouldTransferParametric = true;
-  in->shouldFixShape = true;
-  in->shouldForceAdaptation = true;
-  if (apfCapMesh->getDimension() == 2)
-    in->goodQuality = 0.04; // this is mean-ratio squared
-  else // 3D meshes
-    in->goodQuality = 0.027; // this is the mean-ratio cubed
-  in->maximumIterations = 10;
-
-  if (verbose_flag) {
-    // Adapt with verbose logging but without intermediate VTKs.
-    ma::adaptVerbose(in, false);
-  } else {
-    ma::adapt(in);
-  }
+  ma::adapt(in);
 
   if (volume_flag) {
     // We can't verify surface meshes.

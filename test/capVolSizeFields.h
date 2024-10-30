@@ -76,33 +76,44 @@ class WingShock : public ma::AnisotropicFunction
 class Shock : public ma::AnisotropicFunction
 {
   public:
-    Shock(ma::Mesh* m)
+    /**
+     * @brief Construct a new Shock anisotropic size function.
+     *
+     * @param m The apf::Mesh.
+     * @param x_shock The x-coordinate of the shock plane.
+     * @param delta The width factor of the shock. That is, edge lengths will
+     *              be 0.5*h_0 at x=x_shock+delta*ln(2).
+     * @param hmin The minimum edge length.
+     * @param h_0 The mesh size.
+     */
+    Shock(ma::Mesh* m, double x_shock, double delta, double hmin, double h_0) :
+      mesh(m), x0(x_shock), d_inv(1/delta), h_min(hmin), h_0(h0)
     {
-      mesh = m;
+      assert(delta > 0);
     }
+
+    /**
+     * @brief Construct a new Shock with default parameters.
+     */
+    Shock(ma::Mesh* m) : Shock(m, 0.0, 0.5, 0.001, 0.25) {}
     virtual void getValue(ma::Entity* v, ma::Matrix& R, ma::Vector& H)
     {
       ma::Vector p = ma::getPosition(mesh,v);
       double x = p[0];
-      double x0 = 0.0;
-      double s = 0.25 * (1 - exp(-2*std::abs(x - x0))) + 0.001;
+      double scale = (1 - exp(-d_inv*std::abs(x - x0))) + h_min;
 
-      double hx = s;
-      double hy = 0.25;
-      double hz = 0.25;
-
-      ma::Vector h;
-
-      h = ma::Vector(hx, hy, hz);
+      H = ma::Vector(h0 * scale, h0, h0);
       /* // principal directions */
-      ma::Matrix r(1.0, 0.0, 0.0,
+      R = ma::Matrix(1.0, 0.0, 0.0,
 		   0.0, 1.0, 0.0,
 		   0.0, 0.0, 1.0);
-      H = h;
-      R = r;
     }
   private:
     ma::Mesh* mesh;
+    double x0;
+    double d_inv;
+    double h_min;
+    double h0;
 };
 
 // Shock along a cylinder like the one in
