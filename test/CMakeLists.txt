@@ -215,6 +215,8 @@ if(ENABLE_CAPSTONE)
   if(HAVE_CAPSTONE_SIZINGMETRICTOOL)
     util_exe_func(cap_smooth cap_smooth.cc)
   endif()
+  util_exe_func(cap2mds cap2mds.cc)
+  util_exe_func(cap_split cap_split.cc)
 endif()
 
 # send all the newly added utility executable targets
